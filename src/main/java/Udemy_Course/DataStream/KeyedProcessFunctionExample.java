@@ -17,7 +17,7 @@ public class KeyedProcessFunctionExample {
         StreamExecutionEnvironment environment=
                 StreamExecutionEnvironment.getExecutionEnvironment();
 
-        environment.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
+        environment.setStreamTimeCharacteristic(TimeCharacteristic.ProcessingTime);
 
         DataStream<Tuple2<String, String>> stream =
                 environment.socketTextStream("localhost",9090)
@@ -39,6 +39,58 @@ public class KeyedProcessFunctionExample {
         environment.execute("Keyed Process Function Example");
 
     }
+    public static class CountWithTimeoutFunction extends KeyedProcessFunction<Tuple, Tuple2<String, String>, Tuple2<String, Long>> {
+        private ValueState<CountWithTimestamp> state;
+
+        @Override
+        public void open(Configuration parameters) throws Exception {
+            state = getRuntimeContext().getState(new ValueStateDescriptor<>("myState", CountWithTimestamp.class));
+        }
+
+        @Override
+        public void processElement(
+                Tuple2<String, String> value,
+                Context ctx,
+                Collector<Tuple2<String, Long>> out) throws Exception {
+
+            // retrieve the current count
+            CountWithTimestamp current = state.value();
+            if (current == null) {
+                current = new CountWithTimestamp();
+                current.key = value.f0;
+            }
+
+            // update the state's count
+            current.count++;
+
+            // set the state's timestamp to the record's assigned event time timestamp
+            long timerTimestamp = ctx.timerService().currentProcessingTime();
+            current.lastModified = timerTimestamp;
+
+
+            // write the state back
+            state.update(current);
+
+            // schedule the next timer 60 seconds from the current event time
+            ctx.timerService().registerEventTimeTimer(current.lastModified + 600);
+        }
+
+        @Override
+        public void onTimer(
+                long timestamp,
+                OnTimerContext ctx,
+                Collector<Tuple2<String, Long>> out) throws Exception {
+
+            // get the state for the key that scheduled the timer
+            CountWithTimestamp result = state.value();
+
+            // check if this is an outdated timer or the latest timer
+            if (timestamp == result.lastModified + 600) {
+                // emit the state on timeout
+                out.collect(new Tuple2<String, Long>(result.key, result.count));
+            }
+        }
+    }
 }
 
 class CountWithTimestamp {
@@ -48,55 +100,6 @@ class CountWithTimestamp {
     public long lastModified;
 }
 
-class CountWithTimeoutFunction extends KeyedProcessFunction<Tuple, Tuple2<String, String>, Tuple2<String, Long>> {
-    private ValueState<CountWithTimestamp> state;
 
-    @Override
-    public void open(Configuration parameters) throws Exception {
-        state = getRuntimeContext().getState(new ValueStateDescriptor<>("myState", CountWithTimestamp.class));
-    }
-
-    @Override
-    public void processElement(
-            Tuple2<String, String> value,
-            Context ctx,
-            Collector<Tuple2<String, Long>> out) throws Exception {
-
-        // retrieve the current count
-        CountWithTimestamp current = state.value();
-        if (current == null) {
-            current = new CountWithTimestamp();
-            current.key = value.f0;
-        }
-
-        // update the state's count
-        current.count++;
-
-        // set the state's timestamp to the record's assigned event time timestamp
-        current.lastModified = ctx.timestamp();
-
-        // write the state back
-        state.update(current);
-
-        // schedule the next timer 60 seconds from the current event time
-        ctx.timerService().registerEventTimeTimer(current.lastModified + 60000);
-    }
-
-    @Override
-    public void onTimer(
-            long timestamp,
-            OnTimerContext ctx,
-            Collector<Tuple2<String, Long>> out) throws Exception {
-
-        // get the state for the key that scheduled the timer
-        CountWithTimestamp result = state.value();
-
-        // check if this is an outdated timer or the latest timer
-        if (timestamp == result.lastModified + 60000) {
-            // emit the state on timeout
-            out.collect(new Tuple2<String, Long>(result.key, result.count));
-        }
-    }
-}
 
 

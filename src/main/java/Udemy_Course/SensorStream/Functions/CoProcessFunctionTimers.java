@@ -20,7 +20,7 @@ public class CoProcessFunctionTimers {
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
         // use event time for the application
-        env.setStreamTimeCharacteristic(TimeCharacteristic.ProcessingTime);
+        env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
 
         // switch messages disable filtering of sensor readings for a specific amount of time
         DataStream<Tuple2<String, Long>> filterSwitches = env
@@ -66,6 +66,7 @@ public class CoProcessFunctionTimers {
 
         @Override
         public void processElement1(SensorReading r, Context ctx, Collector<SensorReading> out) throws Exception {
+
             // check if we need to forward the reading
             Boolean forward = forwardingEnabled.value();
             if (forward != null && forward) {
