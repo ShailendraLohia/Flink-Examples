@@ -34,8 +34,9 @@ public class CustomWindow {
         env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
 
         // configure watermark interval
-        env.getConfig().setAutoWatermarkInterval(1000L);
+        env.getConfig().setAutoWatermarkInterval(20000L);
 
+        //System.out.println(env.getConfig().getAutoWatermarkInterval());
         // checkpoint every 10 seconds
         env.getCheckpointConfig().setCheckpointInterval(10 * 1000);
 
@@ -66,7 +67,7 @@ public class CustomWindow {
         @Override
         public Collection<TimeWindow> assignWindows(Object e, long ts, WindowAssignerContext ctx) {
             // rounding down by 30 seconds
-            long startTime = ts - (ts % windowSize);
+             long startTime = ts - (ts % windowSize);
             long endTime = startTime + windowSize;
             // emitting the corresponding time window
             return Collections.singletonList(new TimeWindow(startTime, endTime));
@@ -115,15 +116,18 @@ public class CustomWindow {
 
         @Override
         public TriggerResult onEventTime(long ts, TimeWindow w, TriggerContext ctx) throws Exception {
+
             if (ts == w.getEnd()) {
                 // final evaluation and purge window state
                 return TriggerResult.FIRE_AND_PURGE;
             } else {
                 // register next early firing timer
+                //System.currentTimeMillis()
                 long t = ctx.getCurrentWatermark() + (1000 - (ctx.getCurrentWatermark() % 1000));
                 if (t < w.getEnd()) {
                     ctx.registerEventTimeTimer(t);
                 }
+
                 // fire trigger to early evaluate window
                 return TriggerResult.FIRE;
             }

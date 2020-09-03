@@ -12,19 +12,24 @@ import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
 import org.apache.flink.util.Collector;
 
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+
 public class KeyedProcessFunctionExample {
     public static void main(String[] args) throws Exception {
         StreamExecutionEnvironment environment=
                 StreamExecutionEnvironment.getExecutionEnvironment();
 
-        environment.setStreamTimeCharacteristic(TimeCharacteristic.ProcessingTime);
+        environment.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
 
         DataStream<Tuple2<String, String>> stream =
-                environment.socketTextStream("localhost",9090)
+                //environment.socketTextStream("localhost",9090)
+                        environment.fromElements("Hello Flink","Flink Dear", "Flink Learning ")
                         .map(new MapFunction<String, Tuple2<String, String>>() {
                             @Override
                             public Tuple2<String, String> map(String s) throws Exception {
-                                String[] words= s.split(",");
+                                String[] words= s.split(" ");
 
                                 return new Tuple2<>(words[0],words[1]);
                             }
@@ -67,12 +72,19 @@ public class KeyedProcessFunctionExample {
             long timerTimestamp = ctx.timerService().currentProcessingTime();
             current.lastModified = timerTimestamp;
 
+            LocalDateTime date =
+                    LocalDateTime.ofInstant(Instant.ofEpochMilli(timerTimestamp), ZoneId.systemDefault());
+
+            System.out.println("In Process element timerstamp: " + date);
 
             // write the state back
             state.update(current);
 
             // schedule the next timer 60 seconds from the current event time
-            ctx.timerService().registerEventTimeTimer(current.lastModified + 600);
+            ctx.timerService().registerEventTimeTimer(current.lastModified + 1);
+            //ctx.timerService().currentProcessingTime();
+
+            //System.out.println("hello");
         }
 
         @Override
@@ -84,9 +96,15 @@ public class KeyedProcessFunctionExample {
             // get the state for the key that scheduled the timer
             CountWithTimestamp result = state.value();
 
+            LocalDateTime date =
+                    LocalDateTime.ofInstant(Instant.ofEpochMilli(timestamp), ZoneId.systemDefault());
+
+            System.out.println("On timer method timestamp: " + date);
+
             // check if this is an outdated timer or the latest timer
-            if (timestamp == result.lastModified + 600) {
+            if (timestamp == result.lastModified + 1) {
                 // emit the state on timeout
+                System.out.println(result.key + "," + result.count);
                 out.collect(new Tuple2<String, Long>(result.key, result.count));
             }
         }
